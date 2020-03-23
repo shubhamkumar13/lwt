@@ -27,7 +27,7 @@ struct job_readv {
     struct iovec *iovecs;
     /* Reference to OCaml I/O vectors, to be retained for the duration of the
        readv operation. */
-    value ocaml_io_vectors;
+    caml_root *ocaml_io_vectors;
     /* Data to be read into bytes buffers is first read into temporary buffers
        on the C heap. This is an array of descriptors for copying that data into
        the actual bytes buffers. The array is terminated by a descriptor whose
@@ -49,9 +49,10 @@ static value result_readv(struct job_readv *job)
     if (job->result != -1) {
         for (read_buffer = job->buffers; read_buffer->temporary_buffer != NULL;
              ++read_buffer) {
-            memcpy(&Byte(String_val(read_buffer->caml_buffer),
-                         read_buffer->offset),
-                   read_buffer->temporary_buffer, read_buffer->length);
+          value caml_buffer = caml_read_root(*read_buffer->caml_buffer);
+          memcpy(&Byte(String_val(caml_buffer),
+                       read_buffer->offset),
+                 read_buffer->temporary_buffer, read_buffer->length);
         }
     }
 
@@ -59,11 +60,11 @@ static value result_readv(struct job_readv *job)
     for (read_buffer = job->buffers; read_buffer->temporary_buffer != NULL;
          ++read_buffer) {
         free(read_buffer->temporary_buffer);
-        caml_remove_generational_global_root(&read_buffer->caml_buffer);
+        caml_delete_root(*read_buffer->caml_buffer);
     }
     free(job->iovecs);
 
-    caml_remove_generational_global_root(&job->ocaml_io_vectors);
+    caml_delete_root(*job->ocaml_io_vectors);
 
     /* Decide on the actual result. */
     ssize_t result = job->result;
@@ -91,8 +92,9 @@ CAMLprim value lwt_unix_readv_job(value fd, value io_vectors, value val_count)
 
     /* Retain the OCaml I/O vectors, so that the buffers don't get
        deallocated by the GC. */
-    job->ocaml_io_vectors = io_vectors;
-    caml_register_generational_global_root(&job->ocaml_io_vectors);
+    caml_root *p = caml_stat_alloc(sizeof *p);
+    *p = caml_create_root(io_vectors);
+    job->ocaml_io_vectors = p;
 
     CAMLreturn(lwt_unix_alloc_job(&job->job));
 }

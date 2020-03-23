@@ -29,7 +29,7 @@ struct job_writev {
     char **buffer_copies;
     /* Reference to OCaml I/O vectors, to be retained for the duration of the
        writev operation. */
-    value ocaml_io_vectors;
+    caml_root *ocaml_io_vectors;
 };
 
 static void worker_writev(struct job_writev *job)
@@ -47,7 +47,7 @@ static value result_writev(struct job_writev *job)
     }
     free(job->buffer_copies);
     free(job->iovecs);
-    caml_remove_generational_global_root(&job->ocaml_io_vectors);
+    caml_delete_root(*job->ocaml_io_vectors);
 
     ssize_t result = job->result;
     LWT_UNIX_CHECK_JOB(job, result < 0, "writev");
@@ -74,8 +74,9 @@ CAMLprim value lwt_unix_writev_job(value fd, value io_vectors, value val_count)
 
     /* Retain the OCaml I/O vectors, so that the buffers don't get
        deallocated by the GC. */
-    job->ocaml_io_vectors = io_vectors;
-    caml_register_generational_global_root(&job->ocaml_io_vectors);
+    caml_root *p = caml_stat_alloc(sizeof *p);
+    *p = caml_create_root(io_vectors);
+    job->ocaml_io_vectors = p;
 
     CAMLreturn(lwt_unix_alloc_job(&job->job));
 }

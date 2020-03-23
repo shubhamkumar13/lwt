@@ -24,6 +24,7 @@ void flatten_io_vectors(struct iovec *iovecs, value io_vectors,
     CAMLparam1(io_vectors);
     CAMLlocal3(node, io_vector, buffer);
 
+    caml_root *root;
     size_t index;
     size_t copy_index = 0;
 
@@ -50,10 +51,10 @@ void flatten_io_vectors(struct iovec *iovecs, value io_vectors,
                     lwt_unix_malloc(length);
                 read_buffers[copy_index].length = length;
                 read_buffers[copy_index].offset = offset;
-                read_buffers[copy_index].caml_buffer = buffer;
-                caml_register_generational_global_root(
-                    &read_buffers[copy_index].caml_buffer);
 
+                root = caml_stat_alloc(sizeof *root);
+                *root = caml_create_root(buffer);
+                read_buffers[copy_index].caml_buffer = root;
                 iovecs[index].iov_base =
                     read_buffers[copy_index].temporary_buffer;
                 ++copy_index;

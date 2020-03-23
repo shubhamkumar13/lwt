@@ -20,7 +20,7 @@ LWT_NOT_AVAILABLE2(unix_wait_mincore_job)
 #else
 struct job_wait_mincore {
     struct lwt_unix_job job;
-    value ocaml_buffer;
+    caml_root *ocaml_buffer;
     char *ptr;
 };
 
@@ -33,7 +33,7 @@ static void worker_wait_mincore(struct job_wait_mincore *job)
 
 static value result_wait_mincore(struct job_wait_mincore *job)
 {
-    caml_remove_generational_global_root(&job->ocaml_buffer);
+    caml_delete_root(*job->ocaml_buffer);
     lwt_unix_free_job(&job->job);
     return Val_unit;
 }
@@ -42,8 +42,9 @@ CAMLprim value lwt_unix_wait_mincore_job(value val_buffer, value val_offset)
 {
     LWT_UNIX_INIT_JOB(job, wait_mincore, 0);
     job->ptr = (char *)Caml_ba_data_val(val_buffer) + Long_val(val_offset);
-    job->ocaml_buffer = val_buffer;
-    caml_register_generational_global_root(&job->ocaml_buffer);
+    caml_root *p = caml_stat_alloc(sizeof p);
+    *p = caml_create_root(val_buffer);
+    job->ocaml_buffer = p;
     return lwt_unix_alloc_job(&(job->job));
 }
 #endif

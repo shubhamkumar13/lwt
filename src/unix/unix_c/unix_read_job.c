@@ -28,7 +28,7 @@ struct job_read {
     /* The amount of data to read. */
     long length;
     /* The OCaml string. */
-    value string;
+    caml_root *string;
     /* The offset in the string. */
     long offset;
     /* The result of the read syscall. */
@@ -50,12 +50,13 @@ static value result_read(struct job_read *job)
     long result = job->result;
     if (result < 0) {
         int error_code = job->error_code;
-        caml_remove_generational_global_root(&(job->string));
+        caml_delete_root(*(job->string));
         lwt_unix_free_job(&job->job);
         unix_error(error_code, "read", Nothing);
     } else {
-        memcpy(Bytes_val(job->string) + job->offset, job->buffer, result);
-        caml_remove_generational_global_root(&(job->string));
+        value str = caml_read_root(*job->string);
+        memcpy(Bytes_val(str) + job->offset, job->buffer, result);
+        caml_delete_root(*(job->string));
         lwt_unix_free_job(&job->job);
         return Val_long(result);
     }
@@ -68,9 +69,10 @@ CAMLprim value lwt_unix_read_job(value val_fd, value val_buffer,
     LWT_UNIX_INIT_JOB(job, read, length);
     job->fd = Int_val(val_fd);
     job->length = length;
-    job->string = val_buffer;
+    caml_root *p = caml_stat_alloc(sizeof *p);
+    *p = caml_create_root(val_buffer);
+    job->string = p;
     job->offset = Long_val(val_offset);
-    caml_register_generational_global_root(&(job->string));
     return lwt_unix_alloc_job(&(job->job));
 }
 #endif

@@ -29,7 +29,7 @@ struct readv_copy_to {
     /* Offset into the OCaml buffer to which the temporary buffer must be
        copied. */
     size_t offset;
-    value caml_buffer;
+    caml_root *caml_buffer;
     char *temporary_buffer;
 };
 
