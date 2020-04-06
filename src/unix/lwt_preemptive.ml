@@ -110,7 +110,7 @@ type 'a channel_type = {
 (* Pool of channels *)
 let channels : 'a channel_type Queue.t = Queue.create () 
 (* Queue of clients waiting for a worker to be available: *)
-let waiters : thread Lwt.u Lwt_sequence.t = Lwt_sequence.create ()
+let waiters : 'a Lwt.u Lwt_sequence.t = Lwt_sequence.create ()
 
 (* Create a new domain *)    
 let make_domain () =
