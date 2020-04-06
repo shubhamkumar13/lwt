@@ -41,7 +41,7 @@ let threads_count = ref 0
    | Preemptive threads management                                   |
    +-----------------------------------------------------------------+ *)
 
-module CELL :
+(* module CELL :
 sig
   type 'a t
 
@@ -90,38 +90,63 @@ type thread = {
   mutable reuse : bool;
   (* Whether the thread must be re-added to the pool when the work is
      done. *)
+} *)
+
+module C = Domainslib.Chan
+
+(* Pool of domains: *)
+let domains : 'a Domain.t Queue.t = Queue.create ()
+
+type message = Do of (unit -> unit) | Quit
+type 'a promise = Response of 'a | Wait
+
+type 'a channel_type = {
+  req : message C.t;
+  resp : 'a promise C.t; 
+
 }
 
-(* Pool of worker threads: *)
-let workers : thread Queue.t = Queue.create ()
 
+(* Pool of channels *)
+let channels : 'a channel_type Queue.t = Queue.create () 
 (* Queue of clients waiting for a worker to be available: *)
 let waiters : thread Lwt.u Lwt_sequence.t = Lwt_sequence.create ()
 
-(* Code executed by a worker: *)
-let rec worker_loop worker =
-  let id, task = CELL.get worker.task_cell in
+(* Create a new domain *)    
+let make_domain () =
+  let domain = Domain.spawn worker_loop in
+  Queue.add domain domains
+
+(* create a new channel *)
+let make_channel () =
+  incr channels_count;
+  let channel = {
+    req = C.make 1;
+    resp = C.make 1;
+  } in
+  Queue.add channel channels
+
+(* Code executed by a domain *)
+let rec worker_loop () =
+  let result =
+    match f () with
+    | Result.Ok x -> 
+  match C.recv channel.req with
+  | Do f -> let result = f () in C.send channel.resp (Response result); worker_loop ()
+  | Quit -> ()
+
+  (* let id, task = CELL.get worker.task_cell in
   task ();
   (* If there is too much threads, exit. This can happen if the user
      decreased the maximum: *)
   if !threads_count > !max_threads then worker.reuse <- false;
   (* Tell the main thread that work is done: *)
   Lwt_unix.send_notification id;
-  if worker.reuse then worker_loop worker
-
-(* create a new worker: *)
-let make_worker () =
-  incr threads_count;
-  let worker = {
-    task_cell = CELL.make ();
-    thread = Thread.self ();
-    reuse = true;
-  } in
-  worker.thread <- Thread.create worker_loop worker;
-  worker
+  if worker.reuse then worker_loop worker *)
+  
 
 (* Add a worker to the pool: *)
-let add_worker worker =
+(* let add_worker worker =
   match Lwt_sequence.take_opt_l waiters with
   | None ->
     Queue.add worker workers
@@ -134,6 +159,13 @@ let get_worker () =
     Lwt.return (Queue.take workers)
   else if !threads_count < !max_threads then
     Lwt.return (make_worker ())
+  else
+    (Lwt.add_task_r [@ocaml.warning "-3"]) waiters *)
+let get_channel () =
+  if not (Queue.is_empty channels) then
+    Lwt.return (Queue.take channels)
+  else if !channels_count < !max_channels then
+    Lwt.return (make_channel ())
   else
     (Lwt.add_task_r [@ocaml.warning "-3"]) waiters
 
@@ -185,7 +217,7 @@ let detach f args =
     with exn ->
       result := Result.Error exn
   in
-  get_worker () >>= fun worker ->
+  get_channel () >>= fun channel ->
   let waiter, wakener = Lwt.wait () in
   let id =
     Lwt_unix.make_notification ~once:true
